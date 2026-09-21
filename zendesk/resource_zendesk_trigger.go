@@ -89,6 +89,35 @@ func resourceZendeskTrigger() *schema.Resource {
 	}
 }
 
+// Zendesk returns a trigger's condition or action value either as a string or, where the field is a
+// multi-select, as a list. The schema holds a string, so a list is carried as its JSON encoding — the form
+// the action value has always documented.
+func marshalTriggerValue(value interface{}) (string, error) {
+	switch v := value.(type) {
+	case []interface{}:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("error encoding trigger value: %s", err)
+		}
+		return string(encoded), nil
+	case string:
+		return v, nil
+	}
+	return "", nil
+}
+
+func unmarshalTriggerValue(value string) (interface{}, error) {
+	if !strings.HasPrefix(value, "[") {
+		return value, nil
+	}
+
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
+		return nil, fmt.Errorf("error decoding trigger value: %s", err)
+	}
+	return decoded, nil
+}
+
 // Marshal the zendesk client object to the terraform schema
 func marshalTrigger(trigger client.Trigger, d identifiableGetterSetter) error {
 	fields := map[string]interface{}{
@@ -101,10 +130,15 @@ func marshalTrigger(trigger client.Trigger, d identifiableGetterSetter) error {
 
 	var alls []map[string]interface{}
 	for _, v := range trigger.Conditions.All {
+		stringVal, err := marshalTriggerValue(v.Value)
+		if err != nil {
+			return err
+		}
+
 		m := map[string]interface{}{
 			"field":    v.Field,
 			"operator": v.Operator,
-			"value":    v.Value,
+			"value":    stringVal,
 		}
 		alls = append(alls, m)
 	}
@@ -112,10 +146,15 @@ func marshalTrigger(trigger client.Trigger, d identifiableGetterSetter) error {
 
 	var anys []map[string]interface{}
 	for _, v := range trigger.Conditions.Any {
+		stringVal, err := marshalTriggerValue(v.Value)
+		if err != nil {
+			return err
+		}
+
 		m := map[string]interface{}{
 			"field":    v.Field,
 			"operator": v.Operator,
-			"value":    v.Value,
+			"value":    stringVal,
 		}
 		anys = append(anys, m)
 	}
@@ -124,18 +163,9 @@ func marshalTrigger(trigger client.Trigger, d identifiableGetterSetter) error {
 	var actions []map[string]interface{}
 	for _, action := range trigger.Actions {
 
-		// If the trigger value is a string, leave it be
-		// If it's a list, marshal it to a string
-		var stringVal string
-		switch action.Value.(type) {
-		case []interface{}:
-			tmp, err := json.Marshal(action.Value)
-			if err != nil {
-				return fmt.Errorf("error decoding trigger action value: %s", err)
-			}
-			stringVal = string(tmp)
-		case string:
-			stringVal = action.Value.(string)
+		stringVal, err := marshalTriggerValue(action.Value)
+		if err != nil {
+			return err
 		}
 
 		m := map[string]interface{}{
@@ -188,10 +218,15 @@ func unmarshalTrigger(d identifiableGetterSetter) (client.Trigger, error) {
 			if !ok {
 				return trg, fmt.Errorf("could not parse 'all' conditions for trigger %v", trg)
 			}
+			conditionValue, err := unmarshalTriggerValue(condition["value"].(string))
+			if err != nil {
+				return trg, err
+			}
+
 			conditions = append(conditions, client.TriggerCondition{
 				Field:    condition["field"].(string),
 				Operator: condition["operator"].(string),
-				Value:    condition["value"].(string),
+				Value:    conditionValue,
 			})
 		}
 		trg.Conditions.All = conditions
@@ -205,10 +240,15 @@ func unmarshalTrigger(d identifiableGetterSetter) (client.Trigger, error) {
 			if !ok {
 				return trg, fmt.Errorf("could not parse 'any' conditions for trigger %v", trg)
 			}
+			conditionValue, err := unmarshalTriggerValue(condition["value"].(string))
+			if err != nil {
+				return trg, err
+			}
+
 			conditions = append(conditions, client.TriggerCondition{
 				Field:    condition["field"].(string),
 				Operator: condition["operator"].(string),
-				Value:    condition["value"].(string),
+				Value:    conditionValue,
 			})
 		}
 		trg.Conditions.Any = conditions
@@ -223,15 +263,9 @@ func unmarshalTrigger(d identifiableGetterSetter) (client.Trigger, error) {
 				return trg, fmt.Errorf("could not parse actions for trigger %v", trg)
 			}
 
-			// If the action value is a list, unmarshal it
-			var actionValue interface{}
-			if strings.HasPrefix(action["value"].(string), "[") {
-				err := json.Unmarshal([]byte(action["value"].(string)), &actionValue)
-				if err != nil {
-					return trg, fmt.Errorf("error unmarshalling trigger action value: %s", err)
-				}
-			} else {
-				actionValue = action["value"]
+			actionValue, err := unmarshalTriggerValue(action["value"].(string))
+			if err != nil {
+				return trg, err
 			}
 
 			actions = append(actions, client.TriggerAction{
