@@ -73,6 +73,89 @@ func TestUnmarshalTrigger(t *testing.T) {
 	}
 }
 
+func TestMarshalTriggerValue(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    interface{}
+		expected string
+	}{
+		{name: "string", value: "34", expected: "34"},
+		{name: "list", value: []interface{}{"3926199", "3926239"}, expected: `["3926199","3926239"]`},
+		{name: "absent", value: nil, expected: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := marshalTriggerValue(tc.value)
+			if err != nil {
+				t.Fatalf("marshalTriggerValue returned an error: %v", err)
+			}
+			if v != tc.expected {
+				t.Fatalf("marshalTriggerValue returned %v. should have been %v", v, tc.expected)
+			}
+		})
+	}
+}
+
+func TestUnmarshalTriggerValue(t *testing.T) {
+	v, err := unmarshalTriggerValue("34")
+	if err != nil {
+		t.Fatalf("unmarshalTriggerValue returned an error: %v", err)
+	}
+	if v != "34" {
+		t.Fatalf("unmarshalTriggerValue returned %v. should have been 34", v)
+	}
+
+	v, err = unmarshalTriggerValue(`["3926199","3926239"]`)
+	if err != nil {
+		t.Fatalf("unmarshalTriggerValue returned an error: %v", err)
+	}
+	list, ok := v.([]interface{})
+	if !ok {
+		t.Fatalf("unmarshalTriggerValue returned %T. should have been a list", v)
+	}
+	if len(list) != 2 || list[0] != "3926199" || list[1] != "3926239" {
+		t.Fatalf("unmarshalTriggerValue returned %v. should have been [3926199 3926239]", list)
+	}
+
+	if _, err = unmarshalTriggerValue("[not json"); err == nil {
+		t.Fatal("unmarshalTriggerValue accepted a value that is not a list")
+	}
+}
+
+// A condition on a multi-select field, such as Zendesk's custom ticket statuses, has a list for its value.
+func TestMarshalTriggerWithListValuedCondition(t *testing.T) {
+	expected := zendesk.Trigger{Title: "title"}
+	expected.Conditions.All = []zendesk.TriggerCondition{
+		{
+			Field:    "custom_status_id",
+			Operator: "not_includes",
+			Value:    []interface{}{"3926199", "3926239"},
+		},
+	}
+	m := &identifiableMapGetterSetter{
+		mapGetterSetter: mapGetterSetter{},
+	}
+
+	err := marshalTrigger(expected, m)
+	if err != nil {
+		t.Fatalf("Failed to marshal map %v", err)
+	}
+
+	v, ok := m.GetOk("all")
+	if !ok {
+		t.Fatal("Failed to get all value")
+	}
+	conditions, ok := v.([]map[string]interface{})
+	if !ok {
+		t.Fatalf("all had type %T. should have been a list of conditions", v)
+	}
+	if len(conditions) != 1 {
+		t.Fatalf("all had %d conditions. should have been 1", len(conditions))
+	}
+	if value := conditions[0]["value"]; value != `["3926199","3926239"]` {
+		t.Fatalf("condition had incorrect value %v. should have been the list's JSON encoding", value)
+	}
+}
+
 func TestCreateTrigger(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
