@@ -145,8 +145,6 @@ func (z *Client) UpdateViewPosition(ctx context.Context, id int64, view models.V
 		return err
 	}
 
-	fmt.Sprintf("\nUpdated position to %d for view %d", view.Position, view.ID)
-
 	return nil
 }
 

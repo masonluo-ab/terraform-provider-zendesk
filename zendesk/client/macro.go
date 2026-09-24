@@ -133,8 +133,6 @@ func (z *Client) UpdateMacroPosition(ctx context.Context, id int64, macro models
 		return err
 	}
 
-	fmt.Sprintf("\nUpdated position to %d for macro %d", macro.Position, macro.ID)
-
 	return nil
 }
 
