@@ -14,32 +14,49 @@ description: |-
 
 ```terraform
 # API document about authentication:
-#   https://developer.zendesk.com/rest_api/docs/support/introduction#security-and-authentication
-#
-# NOTE:
-#   currently only token authentication is supported
+#   https://developer.zendesk.com/api-reference/introduction/security-and-auth/
 
 terraform {
   required_providers {
     zendesk = {
-      source  = "circleyu/zendesk"
-      version = ">= 0.0.2"
+      source  = "masonluo-ab/zendesk"
+      version = ">= 1.2.0"
     }
   }
 }
 
+# Authenticate with an API token.
 provider "zendesk" {
   # example.zendesk.com
   account = "example"
   email   = "john.doe@example.com"
   token   = "xxxxxxxxxx"
 
-  # or configure from enviroment variables
+  # or configure from environment variables
   # if you don't want to hardcode the credentials.
   #
   # export ZENDESK_ACCOUNT="example"
   # export ZENDESK_EMAIL="john.doe@example.com"
   # export ZENDESK_TOKEN="xxxxxxxxxx"
+}
+
+# Or authenticate with a confidential OAuth client, using the client_credentials grant. The provider exchanges
+# the secret for an access token once per run; the token lasts about 30 minutes and is not renewed.
+#
+# Requests act as the user who owns the OAuth client, so that user needs the permissions the configuration
+# exercises. The client cannot be managed by the same configuration it authenticates: replacing it would
+# revoke the credentials Terraform is running with.
+provider "zendesk" {
+  alias = "oauth"
+
+  account             = "example"
+  oauth_client_id     = "terraform"
+  oauth_client_secret = "xxxxxxxxxx"
+  oauth_scope         = "read write"
+
+  # export ZENDESK_OAUTH_CLIENT_ID="terraform"
+  # export ZENDESK_OAUTH_CLIENT_SECRET="xxxxxxxxxx"
+  # export ZENDESK_OAUTH_SCOPE="read write"
 }
 ```
 
@@ -49,5 +66,8 @@ provider "zendesk" {
 ### Optional
 
 - `account` (String) Account name of your Zendesk instance.
-- `email` (String) Email address of agent user who have permission to access the API.
-- `token` (String, Sensitive) [API token](https://developer.zendesk.com/rest_api/docs/support/introduction#api-token) for your Zendesk instance.
+- `email` (String) Email address of agent user who have permission to access the API. Set with `token`; conflicts with the OAuth arguments.
+- `oauth_client_id` (String) Identifier of a confidential OAuth client to authenticate as, with the client_credentials grant. Set with `oauth_client_secret`; conflicts with `email` and `token`. Requests then act as the user who owns the client.
+- `oauth_client_secret` (String, Sensitive) Secret of the OAuth client named by `oauth_client_id`.
+- `oauth_scope` (String) Space-separated scopes to request with the OAuth client, e.g. `read write`. Left out of the request when unset.
+- `token` (String, Sensitive) [API token](https://developer.zendesk.com/rest_api/docs/support/introduction#api-token) for your Zendesk instance. Set with `email`; conflicts with the OAuth arguments.
