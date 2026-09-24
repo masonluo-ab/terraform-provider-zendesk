@@ -91,9 +91,8 @@ func TestUnmarshalTarget(t *testing.T) {
 		t.Fatalf("Could marshal map %v", err)
 	}
 
-	if v := m.Get("url"); g.URL != v {
-		t.Fatalf("target had url value %v. should have been %v", g.URL, v)
-	}
+	// `url` is computed, so unmarshalTarget leaves it out of the payload on purpose: Zendesk rejects an
+	// update that carries it back.
 
 	if v := m.Get("type"); g.Type != v {
 		t.Fatalf("target had type value %v. should have been %v", g.Type, v)
