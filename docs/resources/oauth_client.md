@@ -60,7 +60,7 @@ output "example_client_secret" {
 - `global` (Boolean) Whether the OAuth client is available to every Zendesk account.
 - `id` (String) The ID of this resource.
 - `logo_url` (String) The url of the logo shown to users asked to grant the client access.
-- `secret` (String, Sensitive) The client secret. Zendesk returns it in full only when the client is created, so an imported client holds the truncated stub Zendesk answers reads with.
+- `secret` (String, Sensitive) The client secret. Zendesk returns it in full only when the client is created and never again, so a client brought under Terraform by import has no secret in state.
 - `updated_at` (String) The time the OAuth client was last updated.
 - `url` (String) The API url of this OAuth client.
 - `user_id` (Number) The id of the user the OAuth client belongs to.

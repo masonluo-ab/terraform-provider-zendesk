@@ -105,8 +105,8 @@ func resourceZendeskOAuthClient() *schema.Resource {
 				Computed:    true,
 			},
 			"secret": {
-				Description: "The client secret. Zendesk returns it in full only when the client is created, so " +
-					"an imported client holds the truncated stub Zendesk answers reads with.",
+				Description: "The client secret. Zendesk returns it in full only when the client is created and " +
+					"never again, so a client brought under Terraform by import has no secret in state.",
 				Type:      schema.TypeString,
 				Computed:  true,
 				Sensitive: true,
