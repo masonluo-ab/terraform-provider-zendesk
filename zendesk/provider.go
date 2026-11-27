@@ -133,8 +133,26 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		return nil, diag.FromErr(err)
 	}
 
+	instanceURL := fmt.Sprintf("https://%s.zendesk.com", config.Account)
+	httpClient := http.DefaultClient
+	var credential client.Credential
+	if oauth {
+		// The token is exchanged on the first request, not here, so a run that sends none needs no valid
+		// credentials. It lasts about 30 minutes and is not renewed, so a run longer than that fails partway
+		// through. The exchange has its own client: sending it through the OAuth transport would recurse.
+		exchangeClient := &http.Client{Timeout: 30 * time.Second}
+		exchange := func(ctx context.Context) (string, error) {
+			return newClient.ExchangeClientCredentials(ctx, exchangeClient, instanceURL, config.OAuthClientID, config.OAuthClientSecret, config.OAuthScope)
+		}
+		httpClient = &http.Client{Transport: newClient.NewOAuthTransport(nil, exchange)}
+		// A placeholder, so requests are marked as bearer-authenticated; the transport sets the real token.
+		credential = client.NewBearerTokenCredential("")
+	} else {
+		credential = client.NewAPITokenCredential(config.Email, config.Token)
+	}
+
 	// Create & configure Zendesk API client
-	zd, err := client.NewClient(nil) // TODO: set UserAgent to terraform/version
+	zd, err := client.NewClient(httpClient) // TODO: set UserAgent to terraform/version
 	if err != nil {
 		return nil, diag.FromErr(err)
 	}
@@ -142,24 +160,9 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	if err = zd.SetSubdomain(config.Account); err != nil {
 		return nil, diag.FromErr(err)
 	}
-
-	instanceURL := fmt.Sprintf("https://%s.zendesk.com", config.Account)
-	var credential client.Credential
-	if oauth {
-		// Exchanged once per run. The token lasts about 30 minutes and is not renewed, so a run longer than
-		// that fails partway through.
-		httpClient := &http.Client{Timeout: 30 * time.Second}
-		token, err := newClient.ExchangeClientCredentials(ctx, httpClient, instanceURL, config.OAuthClientID, config.OAuthClientSecret, config.OAuthScope)
-		if err != nil {
-			return nil, diag.FromErr(err)
-		}
-		credential = client.NewBearerTokenCredential(token)
-	} else {
-		credential = client.NewAPITokenCredential(config.Email, config.Token)
-	}
 	zd.SetCredential(credential)
 
-	// client.NewClient(nil) above sends with http.DefaultClient, so the wrapper's own requests do too.
-	newZd := newClient.NewClient(*zd, instanceURL+"/api/v2", credential, http.DefaultClient)
+	// The wrapper sends its own requests with the same client, so they go through the same transport.
+	newZd := newClient.NewClient(*zd, instanceURL+"/api/v2", credential, httpClient)
 	return newZd, diags
 }
