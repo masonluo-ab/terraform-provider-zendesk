@@ -138,18 +138,54 @@ func TestReadWebhook(t *testing.T) {
 	}
 }
 
-func TestUpdateWebhook(t *testing.T) {
-	ctrl := gomock.NewController(t)
+// changedMapGetterSetter reports the attributes in changed as changed, as ResourceData.HasChange would.
+type changedMapGetterSetter struct {
+	identifiableMapGetterSetter
+	changed map[string]bool
+}
 
-	m := mock.NewClient(ctrl)
-	i := &identifiableMapGetterSetter{
-		id:              "12345",
-		mapGetterSetter: mapGetterSetter{},
+func (c *changedMapGetterSetter) HasChange(key string) bool {
+	return c.changed[key]
+}
+
+type recordingWebhookPatcher struct {
+	calls  int
+	id     string
+	fields map[string]any
+}
+
+func (r *recordingWebhookPatcher) PatchWebhook(_ context.Context, webhookID string, fields map[string]any) error {
+	r.calls++
+	r.id = webhookID
+	r.fields = fields
+	return nil
+}
+
+func TestUpdateWebhook(t *testing.T) {
+	d := &changedMapGetterSetter{
+		identifiableMapGetterSetter: identifiableMapGetterSetter{
+			id: "12345",
+			mapGetterSetter: mapGetterSetter{
+				"name":        "Example Webhook",
+				"description": "new description",
+				"authentication": []any{map[string]any{
+					"type":         "api_key",
+					"data":         map[string]any{"name": "X-Key", "value": ""},
+					"add_position": "header",
+				}},
+			},
+		},
+		changed: map[string]bool{"description": true},
+	}
+	patcher := &recordingWebhookPatcher{}
+
+	if diags := updateWebhook(context.Background(), d, patcher); len(diags) != 0 {
+		t.Fatalf("updateWebhook returned an error %v", diags)
 	}
 
-	m.EXPECT().UpdateWebhook(gomock.Any(), gomock.Eq("12345"), gomock.Any()).Return(nil)
-	if diags := updateWebhook(context.Background(), i, m); len(diags) != 0 {
-		t.Fatalf("updateWebhook returned an error %v", diags)
+	want := map[string]any{"description": "new description"}
+	if patcher.id != "12345" || !reflect.DeepEqual(patcher.fields, want) {
+		t.Fatalf("patched webhook %q with %v, want 12345 with %v", patcher.id, patcher.fields, want)
 	}
 }
 

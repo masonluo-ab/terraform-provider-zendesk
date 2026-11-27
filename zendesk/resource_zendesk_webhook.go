@@ -282,7 +282,15 @@ func readWebhook(ctx context.Context, d identifiableGetterSetter, zd client.Webh
 	return diags
 }
 
-func updateWebhook(ctx context.Context, d identifiableGetterSetter, zd client.WebhookAPI) diag.Diagnostics {
+type changeGetter interface {
+	identifiableGetterSetter
+	HasChange(key string) bool
+}
+
+// updateWebhook patches only the attributes that changed. The authentication value is write-only, so a webhook's
+// state holds whatever the configuration last gave it, and nothing at all after an import: sending it on every
+// update would send that blank value, which Zendesk rejects. It is sent only when the configuration changes it.
+func updateWebhook(ctx context.Context, d changeGetter, zd newClient.WebhookPatchAPI) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	wh, err := unmarshalWebhook(d)
@@ -290,9 +298,29 @@ func updateWebhook(ctx context.Context, d identifiableGetterSetter, zd client.We
 		return diag.FromErr(err)
 	}
 
-	err = zd.UpdateWebhook(ctx, wh.ID, wh)
-	if err != nil {
-		return diag.FromErr(err)
+	// Keyed by the API's field names, which the schema shares. A nil authentication or subscriptions is sent as
+	// null, which removes it.
+	attributes := map[string]any{
+		"authentication": wh.Authentication,
+		"description":    wh.Description,
+		"endpoint":       wh.Endpoint,
+		"http_method":    wh.HTTPMethod,
+		"name":           wh.Name,
+		"request_format": wh.RequestFormat,
+		"status":         wh.Status,
+		"subscriptions":  wh.Subscriptions,
+	}
+	fields := map[string]any{}
+	for name, value := range attributes {
+		if d.HasChange(name) {
+			fields[name] = value
+		}
+	}
+
+	if len(fields) > 0 {
+		if err := zd.PatchWebhook(ctx, wh.ID, fields); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	err = marshalWebhook(wh, d)
