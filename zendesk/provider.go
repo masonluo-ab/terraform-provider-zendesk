@@ -143,22 +143,23 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		return nil, diag.FromErr(err)
 	}
 
+	instanceURL := fmt.Sprintf("https://%s.zendesk.com", config.Account)
+	var credential client.Credential
 	if oauth {
 		// Exchanged once per run. The token lasts about 30 minutes and is not renewed, so a run longer than
 		// that fails partway through.
-		instanceURL := fmt.Sprintf("https://%s.zendesk.com", config.Account)
 		httpClient := &http.Client{Timeout: 30 * time.Second}
 		token, err := newClient.ExchangeClientCredentials(ctx, httpClient, instanceURL, config.OAuthClientID, config.OAuthClientSecret, config.OAuthScope)
 		if err != nil {
 			return nil, diag.FromErr(err)
 		}
-		zd.SetCredential(client.NewBearerTokenCredential(token))
+		credential = client.NewBearerTokenCredential(token)
 	} else {
-		zd.SetCredential(client.NewAPITokenCredential(config.Email, config.Token))
+		credential = client.NewAPITokenCredential(config.Email, config.Token)
 	}
+	zd.SetCredential(credential)
 
-	newZd := &newClient.Client{
-		Client: *zd,
-	}
+	// client.NewClient(nil) above sends with http.DefaultClient, so the wrapper's own requests do too.
+	newZd := newClient.NewClient(*zd, instanceURL+"/api/v2", credential, http.DefaultClient)
 	return newZd, diags
 }
